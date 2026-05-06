@@ -38,7 +38,7 @@ def load_config():
 if os.path.exists(CONFIG_FILE):
 with open(CONFIG_FILE, "r") as f:
 return json.load(f)
-return {“alert_users”: []}
+return {"alert_users": []}
 
 def save_config(data):
 with open(CONFIG_FILE, "w") as f:
