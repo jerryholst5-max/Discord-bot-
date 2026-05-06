@@ -9,7 +9,8 @@ from collections import defaultdict
 OWNER_ID = 1408144132966322407
 
 def is_owner(user: discord.Member) -> bool:
-return user.id == OWNER_ID
+    return user.id == OWNER_ID
+
 
 intents = discord.Intents.default()
 intents.message_content = True
