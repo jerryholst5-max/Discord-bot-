@@ -18,7 +18,7 @@ intents.bans = True
 intents.guilds = True
 intents.moderation = True
 
-bot = commands.Bot(command_prefix=”!", intents=intents, help_command=None)
+bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
 tree = bot.tree
 
 WARNINGS_FILE = “warnings.json”
