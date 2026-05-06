@@ -79,23 +79,23 @@ if member:
 bot_top_role = guild.me.top_role
 removable = [r for r in member.roles if r.name != "@everyonea" and r < bot_top_role]
 if removable:
-await member.remove_roles(*removable, reason=”[Anti-Nuke]”)
-actions_taken.append(“Rollen entfernt”)
+await member.remove_roles(*removable, reason="[Anti-Nuke]")
+actions_taken.append("Rollen entfernt")
 try:
-await guild.ban(user, reason=f”[Anti-Nuke] {count}x {action_label}”)
-actions_taken.append(“Gebannt”)
+await guild.ban(user, reason=f"[Anti-Nuke] {count}x {action_label}")
+actions_taken.append("Gebannt")
 except discord.Forbidden:
-actions_taken.append(“Ban fehlgeschlagen”)
-msg = f”Anti-Nuke: {user} - {count}x {action_label} - {’, ’.join(actions_taken)}”
+actions_taken.append("Ban fehlgeschlagen")
+msg = f"Anti-Nuke: {user} - {count}x {action_label} - {’, ’.join(actions_taken)}"
 except Exception:
-msg = f”Anti-Nuke: {user} - Fehler”
+msg = f"Anti-Nuke: {user} - Fehler"
 if log_channel:
 await log_channel.send(msg)
 
 @bot.event
 async def on_member_ban(guild, user):
 executor = await get_audit_executor(guild, discord.AuditLogAction.ban)
-await check_nuke(guild, executor, “Ban”)
+await check_nuke(guild, executor, "Ban")
 
 @bot.event
 async def on_guild_channel_delete(channel):
@@ -105,41 +105,41 @@ await check_nuke(channel.guild, executor, “Channel-Loeschung”)
 @bot.event
 async def on_guild_role_delete(role):
 executor = await get_audit_executor(role.guild, discord.AuditLogAction.role_delete)
-await check_nuke(role.guild, executor, “Rollen-Loeschung”)
+await check_nuke(role.guild, executor, "Rollen-Loeschung")
 
 @bot.event
 async def on_member_remove(member):
 executor = await get_audit_executor(member.guild, discord.AuditLogAction.kick)
 if executor:
-await check_nuke(member.guild, executor, “Kick”)
+await check_nuke(member.guild, executor, "Kick")
 
 @bot.event
 async def on_ready():
 await tree.sync()
-print(f”Bot ist online als {bot.user}”)
-print(“Slash Commands synchronisiert!”)
+print(f"Bot ist online als {bot.user}")
+print("Slash Commands synchronisiert!")
 
-@tree.command(name=“help”, description=“Zeigt alle Befehle”)
+@tree.command(name="help", description="Zeigt alle Befehle")
 async def help_cmd(interaction: discord.Interaction):
-embed = discord.Embed(title=“Bot Befehle”, color=discord.Color.blurple())
-embed.add_field(name=“Moderation”, value=”/teamkick /tempmute /unmute /teamwarn /warnings /allwarnings /clearwarnings /bann /unban”, inline=False)
-embed.add_field(name=“Alerts”, value=”/setalerts /removealerts”, inline=False)
+embed = discord.Embed(title="Bot Befehle", color=discord.Color.blurple())
+embed.add_field(name="Moderation", value="/teamkick /tempmute /unmute /teamwarn /warnings /allwarnings /clearwarnings /bann /unban", inline=False)
+embed.add_field(name="Alerts", value="/setalerts /removealerts", inline=False)
 await interaction.response.send_message(embed=embed)
 
-@tree.command(name=“hallo”, description=“Begruessung”)
+@tree.command(name="hallo", description="Begruessung")
 async def hallo(interaction: discord.Interaction):
-await interaction.response.send_message(“Hallo!”)
+await interaction.response.send_message("Hallo!")
 
-@tree.command(name=“teamkick”, description=“Entfernt alle Rollen eines Users”)
-@app_commands.describe(member=“Der User”)
+@tree.command(name="teamkick", description="Entfernt alle Rollen eines Users")
+@app_commands.describe(member="Der User")
 async def teamkick(interaction: discord.Interaction, member: discord.Member):
 if not interaction.user.guild_permissions.manage_roles:
-await interaction.response.send_message(“Keine Berechtigung!”, ephemeral=True)
+await interaction.response.send_message("Keine Berechtigung!", ephemeral=True)
 return
 if is_owner(member):
-await interaction.response.send_message(“Der Eigentuemer ist immun!”, ephemeral=True)
+await interaction.response.send_message("Der Eigentuemer ist immun!", ephemeral=True)
 return
-roles = [r for r in member.roles if r.name != “@everyone”]
+roles = [r for r in member.roles if r.name != "@everyone"]
 if not roles:
 await interaction.response.send_message(f”{member.mention} hat keine Rollen.”)
 return
