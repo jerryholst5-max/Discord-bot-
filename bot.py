@@ -21,7 +21,7 @@ intents.moderation = True
 bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
 tree = bot.tree
 
-WARNINGS_FILE = “warnings.json”
+WARNINGS_FILE = "warnings.json"
 CONFIG_FILE = “config.json”
 
 def load_warnings():
