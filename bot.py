@@ -143,166 +143,166 @@ await interaction.response.send_message("Der Eigentuemer ist immun!", ephemeral=
 return
 roles = [r for r in member.roles if r.name != "@everyone"]
 if not roles:
-await interaction.response.send_message(f”{member.mention} hat keine Rollen.”)
+await interaction.response.send_message(f"{member.mention} hat keine Rollen.")
 return
 await member.remove_roles(*roles)
-await interaction.response.send_message(f”Alle Rollen von {member.mention} entfernt!”)
+await interaction.response.send_message(f"Alle Rollen von {member.mention} entfernt!")
 
-@tree.command(name=“tempmute”, description=“Schaltet einen User stumm”)
-@app_commands.describe(member=“Der User”, minuten=“Dauer in Minuten”, grund=“Grund”)
-async def tempmute(interaction: discord.Interaction, member: discord.Member, minuten: int, grund: str = “Kein Grund”):
+@tree.command(name="tempmute", description="Schaltet einen User stumm")
+@app_commands.describe(member="Der User", minuten="Dauer in Minuten", grund="Grund")
+async def tempmute(interaction: discord.Interaction, member: discord.Member, minuten: int, grund: str = "Kein Grund"):
 if not interaction.user.guild_permissions.moderate_members:
-await interaction.response.send_message(“Keine Berechtigung!”, ephemeral=True)
+await interaction.response.send_message("Keine Berechtigung!", ephemeral=True)
 return
 if is_owner(member):
-await interaction.response.send_message(“Der Eigentuemer ist immun!”, ephemeral=True)
+await interaction.response.send_message("Der Eigentuemer ist immun!", ephemeral=True)
 return
 until = datetime.now(timezone.utc) + timedelta(minutes=minuten)
 try:
 await member.timeout(until, reason=grund)
-await interaction.response.send_message(f”{member.mention} fuer {minuten} Min stummgeschaltet. Grund: {grund}”)
+await interaction.response.send_message(f"{member.mention} fuer {minuten} Min stummgeschaltet. Grund: {grund}")
 except discord.Forbidden:
-await interaction.response.send_message(“Fehlende Berechtigung.”)
+await interaction.response.send_message("Fehlende Berechtigung.")
 
-@tree.command(name=“unmute”, description=“Hebt den Mute auf”)
-@app_commands.describe(member=“Der User”)
+@tree.command(name="unmute", description=“Hebt den Mute auf")
+@app_commands.describe(member="Der User")
 async def unmute(interaction: discord.Interaction, member: discord.Member):
 if not interaction.user.guild_permissions.moderate_members:
-await interaction.response.send_message(“Keine Berechtigung!”, ephemeral=True)
+await interaction.response.send_message("Keine Berechtigung!", ephemeral=True)
 return
 if is_owner(member):
-await interaction.response.send_message(“Der Eigentuemer ist immun!”, ephemeral=True)
+await interaction.response.send_message("Der Eigentuemer ist immun!", ephemeral=True)
 return
 try:
 await member.timeout(None)
-await interaction.response.send_message(f”Mute von {member.mention} aufgehoben!”)
+await interaction.response.send_message(f"Mute von {member.mention} aufgehoben!")
 except discord.Forbidden:
-await interaction.response.send_message(“Fehlende Berechtigung.”)
+await interaction.response.send_message("Fehlende Berechtigung.")
 
-@tree.command(name=“teamwarn”, description=“Verwarnt einen User”)
-@app_commands.describe(member=“Der User”, grund=“Grund”)
-async def teamwarn(interaction: discord.Interaction, member: discord.Member, grund: str = “Kein Grund”):
+@tree.command(name="teamwarn", description="Verwarnt einen User")
+@app_commands.describe(member="Der User", grund="Grund")
+async def teamwarn(interaction: discord.Interaction, member: discord.Member, grund: str = "Kein Grund"):
 if not interaction.user.guild_permissions.manage_messages:
-await interaction.response.send_message(“Keine Berechtigung!”, ephemeral=True)
+await interaction.response.send_message("Keine Berechtigung!", ephemeral=True)
 return
 if is_owner(member):
-await interaction.response.send_message(“Der Eigentuemer ist immun!”, ephemeral=True)
+await interaction.response.send_message("Der Eigentuemer ist immun!", ephemeral=True)
 return
 user_id = str(member.id)
 if user_id not in warnings_data:
 warnings_data[user_id] = []
-warnings_data[user_id].append({“reason”: grund, “by”: str(interaction.user), “at”: datetime.utcnow().isoformat()})
+warnings_data[user_id].append({“reason”: grund, "by": str(interaction.user), "at": datetime.utcnow().isoformat()})
 save_warnings(warnings_data)
 count = len(warnings_data[user_id])
-await interaction.response.send_message(f”{member.mention} verwarnt! Grund: {grund} - Verwarnung {count}”)
+await interaction.response.send_message(f"{member.mention} verwarnt! Grund: {grund} - Verwarnung {count}")
 if count >= 3:
 try:
-await member.ban(reason=f”Auto-Ban nach {count} Verwarnungen”)
+await member.ban(reason=f"Auto-Ban nach {count} Verwarnungen")
 warnings_data[user_id] = []
 save_warnings(warnings_data)
-await interaction.followup.send(f”{member.mention} automatisch gebannt!”)
+await interaction.followup.send(f"{member.mention} automatisch gebannt!")
 except discord.Forbidden:
-await interaction.followup.send(“Fehlende Berechtigung zum Bannen.”)
+await interaction.followup.send("Fehlende Berechtigung zum Bannen.")
 
-@tree.command(name=“warnings”, description=“Zeigt Verwarnungen”)
-@app_commands.describe(member=“Der User”)
+@tree.command(name="warnings", description="Zeigt Verwarnungen")
+@app_commands.describe(member="Der User")
 async def warnings_cmd(interaction: discord.Interaction, member: discord.Member):
 if not interaction.user.guild_permissions.manage_messages:
-await interaction.response.send_message(“Keine Berechtigung!”, ephemeral=True)
+await interaction.response.send_message("Keine Berechtigung!", ephemeral=True)
 return
 user_warnings = warnings_data.get(str(member.id), [])
 if not user_warnings:
-await interaction.response.send_message(f”{member.mention} hat keine Verwarnungen.”)
+await interaction.response.send_message(f"{member.mention} hat keine Verwarnungen.")
 return
-lines = [f”Verwarnungen fuer {member.mention}: {len(user_warnings)}”]
+lines = [f"Verwarnungen fuer {member.mention}: {len(user_warnings)"]
 for i, w in enumerate(user_warnings, 1):
-lines.append(f”{i}. {w[‘reason’]} - von {w[‘by’]}”)
+lines.append(f"{i}. {w[‘reason’]} - von {w[‘by’]}")
 await interaction.response.send_message(”\n”.join(lines))
 
-@tree.command(name=“allwarnings”, description=“Alle Verwarnungen”)
+@tree.command(name="allwarnings", description="Alle Verwarnungen")
 async def allwarnings(interaction: discord.Interaction):
 if not interaction.user.guild_permissions.manage_messages:
-await interaction.response.send_message(“Keine Berechtigung!”, ephemeral=True)
+await interaction.response.send_message("Keine Berechtigung!", ephemeral=True)
 return
 active = {uid: w for uid, w in warnings_data.items() if w}
 if not active:
-await interaction.response.send_message(“Keine aktiven Verwarnungen.”)
+await interaction.response.send_message("Keine aktiven Verwarnungen.")
 return
-embed = discord.Embed(title=“Alle Verwarnungen”, color=discord.Color.orange())
+embed = discord.Embed(title="Alle Verwarnungen", color=discord.Color.orange())
 for uid, warns in sorted(active.items(), key=lambda x: len(x[1]), reverse=True):
 try:
 u = await bot.fetch_user(int(uid))
 name = str(u)
 except Exception:
 name = uid
-embed.add_field(name=f”{name} - {len(warns)}x”, value=warns[-1][“reason”], inline=False)
+embed.add_field(name=f"{name} - {len(warns)}x", value=warns[-1]["reason"], inline=False)
 await interaction.response.send_message(embed=embed)
 
-@tree.command(name=“clearwarnings”, description=“Loescht Verwarnungen”)
-@app_commands.describe(member=“Der User”)
+@tree.command(name="clearwarnings", description="Loescht Verwarnungen")
+@app_commands.describe(member="Der User")
 async def clearwarnings(interaction: discord.Interaction, member: discord.Member):
 if not interaction.user.guild_permissions.manage_messages:
-await interaction.response.send_message(“Keine Berechtigung!”, ephemeral=True)
+await interaction.response.send_message("Keine Berechtigung!", ephemeral=True)
 return
 user_id = str(member.id)
 if not warnings_data.get(user_id):
-await interaction.response.send_message(f”{member.mention} hat keine Verwarnungen.”)
+await interaction.response.send_message(f"{member.mention} hat keine Verwarnungen.")
 return
 count = len(warnings_data[user_id])
 warnings_data[user_id] = []
 save_warnings(warnings_data)
-await interaction.response.send_message(f”{count} Verwarnung(en) von {member.mention} geloescht!”)
+await interaction.response.send_message(f"{count} Verwarnung(en) von {member.mention} geloescht!")
 
-@tree.command(name=“bann”, description=“Bannt einen User”)
-@app_commands.describe(member=“Der User”, grund=“Grund”)
-async def bann(interaction: discord.Interaction, member: discord.Member, grund: str = “Kein Grund”):
+@tree.command(name="bann", description="Bannt einen User")
+@app_commands.describe(member="Der User", grund="Grund")
+async def bann(interaction: discord.Interaction, member: discord.Member, grund: str = "Kein Grund"):
 if not interaction.user.guild_permissions.ban_members:
-await interaction.response.send_message(“Keine Berechtigung!”, ephemeral=True)
+await interaction.response.send_message("Keine Berechtigung!", ephemeral=True)
 return
 if is_owner(member):
-await interaction.response.send_message(“Der Eigentuemer ist immun!”, ephemeral=True)
+await interaction.response.send_message("Der Eigentuemer ist immun!", ephemeral=True)
 return
 try:
 await member.ban(reason=grund)
-await interaction.response.send_message(f”{member.mention} gebannt! Grund: {grund}”)
+await interaction.response.send_message(f"{member.mention} gebannt! Grund: {grund}")
 except discord.Forbidden:
-await interaction.response.send_message(“Fehlende Berechtigung.”)
+await interaction.response.send_message("Fehlende Berechtigung.")
 
-@tree.command(name=“unban”, description=“Entbannt einen User”)
+@tree.command(name="unban", description="Entbannt einen User")
 @app_commands.describe(user_id=“Die User-ID”)
 async def unban(interaction: discord.Interaction, user_id: str):
 if not interaction.user.guild_permissions.ban_members:
-await interaction.response.send_message(“Keine Berechtigung!”, ephemeral=True)
+await interaction.response.send_message("Keine Berechtigung!", ephemeral=True)
 return
 try:
 user = await bot.fetch_user(int(user_id))
 await interaction.guild.unban(user)
-await interaction.response.send_message(f”{user} entbannt!”)
+await interaction.response.send_message(f"{user} entbannt!")
 except Exception:
-await interaction.response.send_message(“Fehler beim Entbannen.”)
+await interaction.response.send_message("Fehler beim Entbannen.")
 
-@tree.command(name=“setalerts”, description=“DM-Alerts aktivieren”)
+@tree.command(name="setalerts", description="DM-Alerts aktivieren")
 async def setalerts(interaction: discord.Interaction):
 uid = str(interaction.user.id)
-if uid in config_data[“alert_users”]:
-await interaction.response.send_message(“Du hast bereits Alerts.”)
+if uid in config_data["alert_users"]:
+await interaction.response.send_message("Du hast bereits Alerts.")
 return
-config_data[“alert_users”].append(uid)
+config_data["alert_users"].append(uid)
 save_config(config_data)
-await interaction.response.send_message(“DM-Alerts aktiviert!”)
+await interaction.response.send_message("DM-Alerts aktiviert!")
 
-@tree.command(name=“removealerts”, description=“DM-Alerts deaktivieren”)
+@tree.command(name="removealerts", description="DM-Alerts deaktivieren")
 async def removealerts(interaction: discord.Interaction):
 uid = str(interaction.user.id)
-if uid not in config_data[“alert_users”]:
-await interaction.response.send_message(“Keine aktiven Alerts.”)
+if uid not in config_data["alert_users"]:
+await interaction.response.send_message("Keine aktiven Alerts.")
 return
-config_data[“alert_users”].remove(uid)
+config_data["alert_users"].remove(uid)
 save_config(config_data)
-await interaction.response.send_message(“DM-Alerts deaktiviert.”)
+await interaction.response.send_message("DM-Alerts deaktiviert.")
 
-token = os.environ.get(“DISCORD_TOKEN”)
+token = os.environ.get("DISCORD_TOKEN")
 if not token:
-raise RuntimeError(“DISCORD_TOKEN nicht gesetzt!”)
+raise RuntimeError("DISCORD_TOKEN nicht gesetzt!")
 
 bot.run(token)
