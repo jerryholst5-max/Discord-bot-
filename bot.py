@@ -77,7 +77,7 @@ try:
 member = guild.get_member(user.id)
 if member:
 bot_top_role = guild.me.top_role
-removable = [r for r in member.roles if r.name != “@everyone” and r < bot_top_role]
+removable = [r for r in member.roles if r.name != "@everyonea" and r < bot_top_role]
 if removable:
 await member.remove_roles(*removable, reason=”[Anti-Nuke]”)
 actions_taken.append(“Rollen entfernt”)
