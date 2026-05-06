@@ -26,9 +26,10 @@ WARNINGS_FILE = "warnings.json"
 CONFIG_FILE = "config.json"
 
 def load_warnings():
-if os.path.exists(WARNINGS_FILE):
-with open(WARNINGS_FILE, "r") as f:
-return json.load(f)
+      if os.path.exists(WARNINGS_FILE):
+          with open(WARNINGS_FILE, "r") as f:
+              return json.load(f)
+
 return {}
 
 def save_warnings(data):
