@@ -22,26 +22,26 @@ bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
 tree = bot.tree
 
 WARNINGS_FILE = "warnings.json"
-CONFIG_FILE = “config.json”
+CONFIG_FILE = "config.json"
 
 def load_warnings():
 if os.path.exists(WARNINGS_FILE):
-with open(WARNINGS_FILE, “r”) as f:
+with open(WARNINGS_FILE, "r") as f:
 return json.load(f)
 return {}
 
 def save_warnings(data):
-with open(WARNINGS_FILE, “w”) as f:
+with open(WARNINGS_FILE, "w") as f:
 json.dump(data, f, indent=2)
 
 def load_config():
 if os.path.exists(CONFIG_FILE):
-with open(CONFIG_FILE, “r”) as f:
+with open(CONFIG_FILE, "r") as f:
 return json.load(f)
 return {“alert_users”: []}
 
 def save_config(data):
-with open(CONFIG_FILE, “w”) as f:
+with open(CONFIG_FILE, "w") as f:
 json.dump(data, f, indent=2)
 
 warnings_data = load_warnings()
