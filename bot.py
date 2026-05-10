@@ -817,6 +817,181 @@ await interaction.response.send_message(embed=embed)
 
 # ─────────────────────────────────────────────
 
+# Anti-Link System
+
+# ─────────────────────────────────────────────
+
+import re
+LINK_PATTERN = re.compile(r”https?://|discord.gg/|www.”, re.IGNORECASE)
+
+def get_antilink(guild_id: int) -> dict:
+cfg = load_config()
+return cfg.get(“antilink”, {}).get(str(guild_id), {
+“enabled”: False,
+“timeout_minutes”: 5,
+“delete_message”: True,
+“ignored_users”: [],
+“ignored_roles”: []
+})
+
+def save_antilink(guild_id: int, data: dict):
+cfg = load_config()
+if “antilink” not in cfg:
+cfg[“antilink”] = {}
+cfg[“antilink”][str(guild_id)] = data
+save_config(cfg)
+
+@bot.event
+async def on_message(message: discord.Message):
+if message.author.bot or not message.guild:
+await bot.process_commands(message)
+return
+
+```
+settings = get_antilink(message.guild.id)
+
+if settings.get("enabled"):
+    # Check ignored users
+    if message.author.id not in settings.get("ignored_users", []):
+        # Check ignored roles
+        member_role_ids = [r.id for r in message.author.roles]
+        ignored_roles = settings.get("ignored_roles", [])
+        if not any(r in member_role_ids for r in ignored_roles):
+            if LINK_PATTERN.search(message.content):
+                # Delete message
+                if settings.get("delete_message", True):
+                    try:
+                        await message.delete()
+                    except Exception:
+                        pass
+                # Timeout user
+                minutes = settings.get("timeout_minutes", 5)
+                if minutes > 0:
+                    try:
+                        until = datetime.now(timezone.utc) + timedelta(minutes=minutes)
+                        await message.author.timeout(until, reason="Anti-Link: Link gesendet")
+                    except Exception:
+                        pass
+                # Warn in channel
+                embed = liquid_glass_embed(
+                    "🔗 Anti-Link",
+                    f"{message.author.mention} Links sind auf diesem Server nicht erlaubt!\nTimeout: **{minutes} Minuten**",
+                    discord.Color.from_rgb(255, 80, 80)
+                )
+                try:
+                    warn_msg = await message.channel.send(embed=embed)
+                    await asyncio.sleep(5)
+                    await warn_msg.delete()
+                except Exception:
+                    pass
+
+await bot.process_commands(message)
+```
+
+# ─────────────────────────────────────────────
+
+# /antilink setup
+
+# ─────────────────────────────────────────────
+
+@tree.command(name=“antilink”, description=“Anti-Link System einstellen”)
+@app_commands.describe(
+aktiv=“Anti-Link aktivieren oder deaktivieren”,
+timeout_minuten=“Wie lange wird der User getimeoutet (0 = kein Timeout)”,
+nachricht_loeschen=“Soll die Nachricht mit dem Link gelöscht werden?”,
+)
+async def antilink(
+interaction: discord.Interaction,
+aktiv: bool,
+timeout_minuten: int = 5,
+nachricht_loeschen: bool = True,
+):
+if not interaction.user.guild_permissions.administrator:
+await interaction.response.send_message(“Keine Berechtigung!”, ephemeral=True)
+return
+settings = get_antilink(interaction.guild.id)
+settings[“enabled”] = aktiv
+settings[“timeout_minutes”] = timeout_minuten
+settings[“delete_message”] = nachricht_loeschen
+save_antilink(interaction.guild.id, settings)
+status = “✅ Aktiviert” if aktiv else “❌ Deaktiviert”
+embed = liquid_glass_embed(
+“Anti-Link Einstellungen”,
+f”**Status:** {status}\n**Timeout:** {timeout_minuten} Minuten\n**Nachricht löschen:** {‘Ja’ if nachricht_loeschen else ‘Nein’}”,
+discord.Color.from_rgb(100, 220, 150) if aktiv else discord.Color.from_rgb(255, 80, 80)
+)
+await interaction.response.send_message(embed=embed)
+
+@tree.command(name=“antilink-ignore-user”, description=“User vom Anti-Link System ignorieren/entfernen”)
+@app_commands.describe(member=“Der User”, aktion=“Hinzufügen oder entfernen”)
+@app_commands.choices(aktion=[
+app_commands.Choice(name=“hinzufügen”, value=“add”),
+app_commands.Choice(name=“entfernen”,  value=“remove”),
+])
+async def antilink_ignore_user(interaction: discord.Interaction, member: discord.Member, aktion: str):
+if not interaction.user.guild_permissions.administrator:
+await interaction.response.send_message(“Keine Berechtigung!”, ephemeral=True)
+return
+settings = get_antilink(interaction.guild.id)
+ignored = settings.get(“ignored_users”, [])
+if aktion == “add”:
+if member.id not in ignored:
+ignored.append(member.id)
+msg = f”**{member}** wird jetzt ignoriert.”
+else:
+ignored = [u for u in ignored if u != member.id]
+msg = f”**{member}** wird nicht mehr ignoriert.”
+settings[“ignored_users”] = ignored
+save_antilink(interaction.guild.id, settings)
+embed = liquid_glass_embed(“Anti-Link • User”, msg, discord.Color.from_rgb(130, 200, 240))
+await interaction.response.send_message(embed=embed)
+
+@tree.command(name=“antilink-ignore-rolle”, description=“Rolle vom Anti-Link System ignorieren/entfernen”)
+@app_commands.describe(rolle=“Die Rolle”, aktion=“Hinzufügen oder entfernen”)
+@app_commands.choices(aktion=[
+app_commands.Choice(name=“hinzufügen”, value=“add”),
+app_commands.Choice(name=“entfernen”,  value=“remove”),
+])
+async def antilink_ignore_rolle(interaction: discord.Interaction, rolle: discord.Role, aktion: str):
+if not interaction.user.guild_permissions.administrator:
+await interaction.response.send_message(“Keine Berechtigung!”, ephemeral=True)
+return
+settings = get_antilink(interaction.guild.id)
+ignored = settings.get(“ignored_roles”, [])
+if aktion == “add”:
+if rolle.id not in ignored:
+ignored.append(rolle.id)
+msg = f”**{rolle.name}** wird jetzt ignoriert.”
+else:
+ignored = [r for r in ignored if r != rolle.id]
+msg = f”**{rolle.name}** wird nicht mehr ignoriert.”
+settings[“ignored_roles”] = ignored
+save_antilink(interaction.guild.id, settings)
+embed = liquid_glass_embed(“Anti-Link • Rolle”, msg, discord.Color.from_rgb(130, 200, 240))
+await interaction.response.send_message(embed=embed)
+
+@tree.command(name=“antilink-status”, description=“Zeigt die aktuellen Anti-Link Einstellungen”)
+async def antilink_status(interaction: discord.Interaction):
+if not interaction.user.guild_permissions.administrator:
+await interaction.response.send_message(“Keine Berechtigung!”, ephemeral=True)
+return
+settings = get_antilink(interaction.guild.id)
+enabled = settings.get(“enabled”, False)
+timeout = settings.get(“timeout_minutes”, 5)
+delete = settings.get(“delete_message”, True)
+ignored_users = settings.get(“ignored_users”, [])
+ignored_roles = settings.get(“ignored_roles”, [])
+users_str = “, “.join(f”<@{u}>” for u in ignored_users) if ignored_users else “Keine”
+roles_str = “, “.join(f”<@&{r}>” for r in ignored_roles) if ignored_roles else “Keine”
+embed = liquid_glass_embed(
+“Anti-Link Status”,
+f”**Status:** {‘✅ Aktiv’ if enabled else ‘❌ Inaktiv’}\n**Timeout:** {timeout} Minuten\n**Nachrichten löschen:** {‘Ja’ if delete else ‘Nein’}\n**Ignorierte User:** {users_str}\n**Ignorierte Rollen:** {roles_str}”,
+discord.Color.from_rgb(130, 200, 240)
+)
+await interaction.response.send_message(embed=embed, ephemeral=True)
+
+# ─────────────────────────────────────────────
+
 # Start
 
 # ─────────────────────────────────────────────
