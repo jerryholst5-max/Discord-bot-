@@ -4,6 +4,7 @@ from discord import app_commands
 import os
 import json
 import asyncio
+import io
 from datetime import datetime, timedelta, timezone
 from collections import defaultdict
 
@@ -152,6 +153,8 @@ await check_nuke(member.guild, executor, “Kick”)
 @bot.event
 async def on_ready():
 await tree.sync()
+bot.add_view(TicketView())
+bot.add_view(TicketCloseView())
 print(f”Bot ist online als {bot.user}”)
 print(“Slash Commands synchronisiert!”)
 
@@ -860,6 +863,504 @@ f”**Status:** {‘✅ Aktiv’ if enabled else ‘❌ Inaktiv’}\n**Timeout:*
 discord.Color.from_rgb(130, 200, 240)
 )
 await interaction.response.send_message(embed=embed, ephemeral=True)
+
+# ─────────────────────────────────────────────
+
+# Ticket System
+
+# ─────────────────────────────────────────────
+
+TICKET_FILE = “tickets.json”
+
+TICKET_CATEGORIES = {
+“allgemeine_frage”:       (“❓”, “Allgemeine Frage”,       “Stelle eine allgemeine Frage”),
+“support”:                (“🛠️”, “Support”,                “Erhalte technischen Support”),
+“bewerbung”:              (“📋”, “Bewerbung”,              “Bewirb dich beim Team”),
+“report”:                 (“🚨”, “Report”,                 “Melde einen Spieler”),
+“unban_antrag”:           (“🔓”, “Unban-Antrag”,           “Stelle einen Unban-Antrag”),
+“partner_bewerbung”:      (“🤝”, “Partner-Bewerbung”,      “Bewirb dich als Partner”),
+}
+
+def load_tickets():
+if os.path.exists(TICKET_FILE):
+with open(TICKET_FILE, “r”) as f:
+return json.load(f)
+return {}
+
+def save_tickets(data):
+with open(TICKET_FILE, “w”) as f:
+json.dump(data, f, indent=2)
+
+def get_ticket_config(guild_id: int) -> dict:
+cfg = load_config()
+return cfg.get(“ticket_config”, {}).get(str(guild_id), {})
+
+def save_ticket_config(guild_id: int, data: dict):
+cfg = load_config()
+if “ticket_config” not in cfg:
+cfg[“ticket_config”] = {}
+cfg[“ticket_config”][str(guild_id)] = data
+save_config(cfg)
+
+# ── Close Button View ──
+
+class TicketCloseView(discord.ui.View):
+def **init**(self):
+super().**init**(timeout=None)
+
+```
+@discord.ui.button(label="🔒 Ticket schließen", style=discord.ButtonStyle.danger, custom_id="ticket_close")
+async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+    if not interaction.user.guild_permissions.manage_channels:
+        await interaction.response.send_message("Keine Berechtigung!", ephemeral=True)
+        return
+
+    tickets = load_tickets()
+    guild_id = str(interaction.guild.id)
+    channel_id = str(interaction.channel.id)
+
+    ticket_data = None
+    ticket_key = None
+    for key, t in tickets.get(guild_id, {}).items():
+        if t.get("channel_id") == interaction.channel.id:
+            ticket_data = t
+            ticket_key = key
+            break
+
+    if not ticket_data:
+        await interaction.response.send_message("Kein Ticket gefunden!", ephemeral=True)
+        return
+
+    await interaction.response.send_message(
+        embed=liquid_glass_embed("🔒 Ticket schließen", "Wie soll das Ticket geschlossen werden?",
+                                 discord.Color.from_rgb(255, 150, 50)),
+        view=TicketCloseActionView(ticket_data, ticket_key),
+        ephemeral=True
+    )
+```
+
+class TicketCloseActionView(discord.ui.View):
+def **init**(self, ticket_data, ticket_key):
+super().**init**(timeout=60)
+self.ticket_data = ticket_data
+self.ticket_key = ticket_key
+
+```
+@discord.ui.button(label="🗑️ Löschen", style=discord.ButtonStyle.danger)
+async def delete_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+    await self._close(interaction, delete=True)
+
+@discord.ui.button(label="📁 Archivieren", style=discord.ButtonStyle.secondary)
+async def archive_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+    await self._close(interaction, delete=False)
+
+async def _close(self, interaction: discord.Interaction, delete: bool):
+    channel = interaction.channel
+    guild = interaction.guild
+    guild_id = str(guild.id)
+    cfg = get_ticket_config(guild.id)
+
+    # Build transcript
+    transcript_lines = [f"📄 Transcript – {channel.name}\n{'='*40}\n"]
+    async for msg in channel.history(limit=200, oldest_first=True):
+        if not msg.author.bot:
+            transcript_lines.append(f"[{msg.created_at.strftime('%d.%m.%Y %H:%M')}] {msg.author}: {msg.content}")
+    transcript_text = "\n".join(transcript_lines)
+
+    # Send transcript
+    transcript_channel_id = cfg.get("transcript_channel")
+    if transcript_channel_id:
+        tc = guild.get_channel(transcript_channel_id)
+        if tc:
+            embed = liquid_glass_embed(
+                f"📄 Transcript – {channel.name}",
+                f"**Geöffnet von:** <@{self.ticket_data.get('user_id')}>\n**Kategorie:** {self.ticket_data.get('category')}\n**Geschlossen von:** {interaction.user.mention}",
+                discord.Color.from_rgb(130, 200, 240)
+            )
+            file_content = transcript_text.encode("utf-8")
+            file = discord.File(
+                fp=__import__("io").BytesIO(file_content),
+                filename=f"transcript-{channel.name}.txt"
+            )
+            await tc.send(embed=embed, file=file)
+
+    # Remove from tickets
+    tickets = load_tickets()
+    if guild_id in tickets and self.ticket_key in tickets[guild_id]:
+        del tickets[guild_id][self.ticket_key]
+        save_tickets(tickets)
+
+    await interaction.response.send_message("✅ Ticket wird geschlossen...", ephemeral=True)
+
+    if delete:
+        await asyncio.sleep(3)
+        await channel.delete(reason=f"Ticket gelöscht von {interaction.user}")
+    else:
+        # Archive: rename and remove permissions
+        archive_category_id = cfg.get("archive_category")
+        overwrites = {guild.default_role: discord.PermissionOverwrite(view_channel=False)}
+        for role in guild.roles:
+            if role.permissions.manage_channels:
+                overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=False)
+        await channel.edit(
+            name=f"archived-{channel.name}",
+            overwrites=overwrites,
+            category=guild.get_channel(archive_category_id) if archive_category_id else channel.category,
+            reason=f"Ticket archiviert von {interaction.user}"
+        )
+```
+
+# ── Category Select ──
+
+class TicketCategorySelect(discord.ui.Select):
+def **init**(self):
+options = [
+discord.SelectOption(
+label=label,
+value=key,
+description=desc,
+emoji=emoji
+)
+for key, (emoji, label, desc) in TICKET_CATEGORIES.items()
+]
+super().**init**(placeholder=“Wähle eine Kategorie…”, options=options, custom_id=“ticket_select”)
+
+```
+async def callback(self, interaction: discord.Interaction):
+    guild = interaction.guild
+    category_key = self.values[0]
+    emoji, label, _ = TICKET_CATEGORIES[category_key]
+    tickets = load_tickets()
+    guild_id = str(guild.id)
+    cfg = get_ticket_config(guild.id)
+
+    if guild_id not in tickets:
+        tickets[guild_id] = {}
+
+    # Check if user already has open ticket
+    for t in tickets[guild_id].values():
+        if t.get("user_id") == interaction.user.id and t.get("category") == label:
+            await interaction.response.send_message(
+                f"Du hast bereits ein offenes **{label}** Ticket!", ephemeral=True
+            )
+            return
+
+    # Get ticket category
+    ticket_category_id = cfg.get("ticket_category")
+    ticket_category = guild.get_channel(ticket_category_id) if ticket_category_id else None
+
+    # Count tickets
+    count = len(tickets[guild_id]) + 1
+    channel_name = f"{emoji}-{category_key.replace('_', '-')}-{count:04d}"
+
+    # Create channel with permissions
+    support_role_id = cfg.get("support_role")
+    overwrites = {
+        guild.default_role: discord.PermissionOverwrite(view_channel=False),
+        interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
+    }
+    if support_role_id:
+        support_role = guild.get_role(support_role_id)
+        if support_role:
+            overwrites[support_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
+
+    channel = await guild.create_text_channel(
+        name=channel_name,
+        category=ticket_category,
+        overwrites=overwrites,
+        reason=f"Ticket von {interaction.user}"
+    )
+
+    # Save ticket
+    tickets[guild_id][str(channel.id)] = {
+        "channel_id": channel.id,
+        "user_id": interaction.user.id,
+        "category": label,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    save_tickets(tickets)
+
+    # Send ticket embed
+    embed = liquid_glass_embed(
+        f"{emoji} {label}",
+        f"Willkommen {interaction.user.mention}!\n\nBeschreibe dein Anliegen so genau wie möglich.\nUnser Team wird sich so schnell wie möglich bei dir melden.\n\n**Kategorie:** {label}",
+        discord.Color.from_rgb(130, 200, 240)
+    )
+    # Always add owner to ticket
+    owner = guild.get_member(OWNER_ID)
+    if owner:
+        await channel.set_permissions(owner, view_channel=True, send_messages=True, read_message_history=True)
+
+    await channel.send(
+        content=interaction.user.mention,
+        embed=embed,
+        view=TicketCloseView()
+    )
+
+    await interaction.response.send_message(
+        f"✅ Dein Ticket wurde erstellt: {channel.mention}", ephemeral=True
+    )
+```
+
+class TicketView(discord.ui.View):
+def **init**(self):
+super().**init**(timeout=None)
+self.add_item(TicketCategorySelect())
+
+# ── /ticket-setup ──
+
+@tree.command(name=“ticket-setup”, description=“Richtet das Ticket-System ein (Admin)”)
+@app_commands.describe(
+kanal=“Kanal wo das Ticket-Panel gepostet wird”,
+support_rolle=“Rolle die Tickets sehen kann”,
+neue_kategorie=“Neue Kategorie automatisch erstellen? (Ja = neue erstellen, Nein = vorhandene wählen)”,
+ticket_kategorie=“Vorhandene Kategorie für Tickets (nur wenn neue_kategorie=Nein)”,
+archiv_kategorie=“Kategorie für archivierte Tickets (leer = neue wird erstellt)”,
+transcript_kanal=“Kanal wo Transcripts gespeichert werden”,
+)
+@app_commands.choices(neue_kategorie=[
+app_commands.Choice(name=“Ja – Neue Kategorien erstellen”, value=“yes”),
+app_commands.Choice(name=“Nein – Vorhandene Kategorie nutzen”, value=“no”),
+])
+async def ticket_setup(
+interaction: discord.Interaction,
+kanal: discord.TextChannel,
+support_rolle: discord.Role,
+neue_kategorie: str,
+transcript_kanal: discord.TextChannel,
+ticket_kategorie: discord.CategoryChannel = None,
+archiv_kategorie: discord.CategoryChannel = None,
+):
+if not interaction.user.guild_permissions.administrator:
+await interaction.response.send_message(“Keine Berechtigung!”, ephemeral=True)
+return
+
+```
+await interaction.response.defer(ephemeral=True)
+
+guild = interaction.guild
+
+if neue_kategorie == "yes":
+    # Create new categories automatically
+    support_role_overwrite = {
+        guild.default_role: discord.PermissionOverwrite(view_channel=False),
+        support_rolle: discord.PermissionOverwrite(view_channel=True),
+    }
+    ticket_kategorie = await guild.create_category("🎫 | Tickets", overwrites=support_role_overwrite)
+    archiv_kategorie = await guild.create_category("📁 | Archiv", overwrites={
+        guild.default_role: discord.PermissionOverwrite(view_channel=False),
+        support_rolle: discord.PermissionOverwrite(view_channel=True, send_messages=False),
+    })
+else:
+    if not ticket_kategorie:
+        await interaction.followup.send("❌ Du musst eine Ticket-Kategorie auswählen wenn keine neue erstellt wird!", ephemeral=True)
+        return
+    if not archiv_kategorie:
+        archiv_kategorie = await guild.create_category("📁 | Archiv", overwrites={
+            guild.default_role: discord.PermissionOverwrite(view_channel=False),
+            support_rolle: discord.PermissionOverwrite(view_channel=True, send_messages=False),
+        })
+
+# Save config
+save_ticket_config(interaction.guild.id, {
+    "support_role": support_rolle.id,
+    "ticket_category": ticket_kategorie.id,
+    "archive_category": archiv_kategorie.id,
+    "transcript_channel": transcript_kanal.id,
+})
+
+# Send panel
+embed = liquid_glass_embed(
+    "🎫 Support Tickets",
+    "Wähle unten eine Kategorie aus um ein Ticket zu öffnen.\nUnser Team hilft dir so schnell wie möglich!",
+    discord.Color.from_rgb(140, 210, 255)
+)
+embed.add_field(name="❓ Allgemeine Frage", value="Stelle eine allgemeine Frage", inline=True)
+embed.add_field(name="🛠️ Support", value="Erhalte technischen Support", inline=True)
+embed.add_field(name="📋 Bewerbung", value="Bewirb dich beim Team", inline=True)
+embed.add_field(name="🚨 Report", value="Melde einen Spieler", inline=True)
+embed.add_field(name="🔓 Unban-Antrag", value="Stelle einen Unban-Antrag", inline=True)
+embed.add_field(name="🤝 Partner-Bewerbung", value="Bewirb dich als Partner", inline=True)
+
+await kanal.send(embed=embed, view=TicketView())
+
+await interaction.followup.send(
+    embed=liquid_glass_embed(
+        "✅ Ticket-System eingerichtet!",
+        f"**Panel:** {kanal.mention}\n**Support-Rolle:** {support_rolle.mention}\n**Ticket-Kategorie:** {ticket_kategorie.name}\n**Archiv:** {archiv_kategorie.name}\n**Transcript-Kanal:** {transcript_kanal.mention}",
+        discord.Color.from_rgb(100, 220, 150)
+    )
+)
+```
+
+# ── Register persistent views on startup ──
+
+# ─────────────────────────────────────────────
+
+# /ticket-schliessen, /ticket-add, /ticket-remove
+
+# ─────────────────────────────────────────────
+
+@tree.command(name=“ticket-schliessen”, description=“Schließt das aktuelle Ticket”)
+@app_commands.describe(aktion=“Ticket löschen oder archivieren”)
+@app_commands.choices(aktion=[
+app_commands.Choice(name=“🗑️ Löschen”, value=“delete”),
+app_commands.Choice(name=“📁 Archivieren”, value=“archive”),
+])
+async def ticket_schliessen(interaction: discord.Interaction, aktion: str):
+if not interaction.user.guild_permissions.manage_channels:
+await interaction.response.send_message(“Keine Berechtigung!”, ephemeral=True)
+return
+
+```
+tickets = load_tickets()
+guild_id = str(interaction.guild.id)
+ticket_key = None
+ticket_data = None
+
+for key, t in tickets.get(guild_id, {}).items():
+    if t.get("channel_id") == interaction.channel.id:
+        ticket_data = t
+        ticket_key = key
+        break
+
+if not ticket_data:
+    await interaction.response.send_message("❌ Dieser Kanal ist kein Ticket!", ephemeral=True)
+    return
+
+await interaction.response.defer()
+
+guild = interaction.guild
+channel = interaction.channel
+cfg = get_ticket_config(guild.id)
+
+# Build & send transcript
+transcript_lines = [f"📄 Transcript – {channel.name}\n{'='*40}\n"]
+async for msg in channel.history(limit=200, oldest_first=True):
+    if not msg.author.bot:
+        transcript_lines.append(f"[{msg.created_at.strftime('%d.%m.%Y %H:%M')}] {msg.author}: {msg.content}")
+transcript_text = "\n".join(transcript_lines)
+
+transcript_channel_id = cfg.get("transcript_channel")
+if transcript_channel_id:
+    tc = guild.get_channel(transcript_channel_id)
+    if tc:
+        embed = liquid_glass_embed(
+            f"📄 Transcript – {channel.name}",
+            f"**Geöffnet von:** <@{ticket_data.get('user_id')}>\n**Kategorie:** {ticket_data.get('category')}\n**Geschlossen von:** {interaction.user.mention}",
+            discord.Color.from_rgb(130, 200, 240)
+        )
+        file = discord.File(fp=io.BytesIO(transcript_text.encode("utf-8")), filename=f"transcript-{channel.name}.txt")
+        await tc.send(embed=embed, file=file)
+
+# Remove from tickets
+if guild_id in tickets and ticket_key in tickets[guild_id]:
+    del tickets[guild_id][ticket_key]
+    save_tickets(tickets)
+
+if aktion == "delete":
+    await interaction.followup.send("🗑️ Ticket wird in 3 Sekunden gelöscht...")
+    await asyncio.sleep(3)
+    await channel.delete(reason=f"Ticket gelöscht von {interaction.user}")
+else:
+    archive_category_id = cfg.get("archive_category")
+    overwrites = {
+        guild.default_role: discord.PermissionOverwrite(view_channel=False)
+    }
+    for role in guild.roles:
+        if role.permissions.manage_channels:
+            overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=False)
+    await channel.edit(
+        name=f"archived-{channel.name}",
+        overwrites=overwrites,
+        category=guild.get_channel(archive_category_id) if archive_category_id else channel.category,
+        reason=f"Ticket archiviert von {interaction.user}"
+    )
+    embed = liquid_glass_embed("📁 Archiviert", f"Ticket wurde von {interaction.user.mention} archiviert.", discord.Color.from_rgb(130, 200, 240))
+    await interaction.followup.send(embed=embed)
+```
+
+@tree.command(name=“ticket-add”, description=“Fügt einen User zum aktuellen Ticket hinzu”)
+@app_commands.describe(member=“Der User der hinzugefügt werden soll”)
+async def ticket_add(interaction: discord.Interaction, member: discord.Member):
+if not interaction.user.guild_permissions.manage_channels:
+await interaction.response.send_message(“Keine Berechtigung!”, ephemeral=True)
+return
+
+```
+tickets = load_tickets()
+guild_id = str(interaction.guild.id)
+is_ticket = any(t.get("channel_id") == interaction.channel.id for t in tickets.get(guild_id, {}).values())
+
+if not is_ticket:
+    await interaction.response.send_message("❌ Dieser Kanal ist kein Ticket!", ephemeral=True)
+    return
+
+await interaction.channel.set_permissions(member, view_channel=True, send_messages=True, read_message_history=True)
+embed = liquid_glass_embed("✅ User hinzugefügt", f"{member.mention} wurde zum Ticket hinzugefügt.", discord.Color.from_rgb(100, 220, 150))
+await interaction.response.send_message(embed=embed)
+```
+
+@tree.command(name=“ticket-remove”, description=“Entfernt einen User aus dem aktuellen Ticket”)
+@app_commands.describe(member=“Der User der entfernt werden soll”)
+async def ticket_remove(interaction: discord.Interaction, member: discord.Member):
+if not interaction.user.guild_permissions.manage_channels:
+await interaction.response.send_message(“Keine Berechtigung!”, ephemeral=True)
+return
+
+```
+tickets = load_tickets()
+guild_id = str(interaction.guild.id)
+is_ticket = any(t.get("channel_id") == interaction.channel.id for t in tickets.get(guild_id, {}).values())
+
+if not is_ticket:
+    await interaction.response.send_message("❌ Dieser Kanal ist kein Ticket!", ephemeral=True)
+    return
+
+await interaction.channel.set_permissions(member, overwrite=None)
+embed = liquid_glass_embed("🚫 User entfernt", f"{member.mention} wurde aus dem Ticket entfernt.", discord.Color.from_rgb(255, 100, 100))
+await interaction.response.send_message(embed=embed)
+```
+
+@tree.command(name=“ticket-übertragen”, description=“Überträgt das Ticket an einen anderen User”)
+@app_commands.describe(member=“Der User dem das Ticket übertragen werden soll”)
+async def ticket_uebertragen(interaction: discord.Interaction, member: discord.Member):
+if not interaction.user.guild_permissions.manage_channels:
+await interaction.response.send_message(“Keine Berechtigung!”, ephemeral=True)
+return
+
+```
+tickets = load_tickets()
+guild_id = str(interaction.guild.id)
+ticket_key = None
+ticket_data = None
+
+for key, t in tickets.get(guild_id, {}).items():
+    if t.get("channel_id") == interaction.channel.id:
+        ticket_data = t
+        ticket_key = key
+        break
+
+if not ticket_data:
+    await interaction.response.send_message("❌ Dieser Kanal ist kein Ticket!", ephemeral=True)
+    return
+
+old_user_id = ticket_data.get("user_id")
+
+# Keep old user in ticket, just add new user
+await interaction.channel.set_permissions(member, view_channel=True, send_messages=True, read_message_history=True)
+
+# Update ticket data
+tickets[guild_id][ticket_key]["user_id"] = member.id
+save_tickets(tickets)
+
+embed = liquid_glass_embed(
+    "🔁 Ticket übertragen",
+    f"Das Ticket wurde von <@{old_user_id}> an {member.mention} übertragen.",
+    discord.Color.from_rgb(130, 200, 240)
+)
+await interaction.response.send_message(embed=embed)
+```
 
 # ─────────────────────────────────────────────
 
