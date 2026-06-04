@@ -19,4 +19,5 @@ jobs:
       - name: Run bot
         env:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+          MONGODB_URL: ${{ secrets.MONGODB_URL }}
         run: python bot.py
