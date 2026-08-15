@@ -1,5 +1,0 @@
-discord.py==2.4.0
-flask==3.0.3
-requests==2.31.0
-pymongo==4.7.2
-gunicorn==22.0.0
