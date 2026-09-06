@@ -4600,7 +4600,7 @@ async def modlog_setup(interaction: discord.Interaction, kanal: discord.TextChan
 ])
 async def modlog_eintrag(interaction: discord.Interaction, aktion: str, user: discord.Member, grund: str = "Kein Grund angegeben"):
     if not interaction.user.guild_permissions.kick_members:
-        await interaction.followup.send("❌ Keine Berechtigung!", ephemeral=True)
+        await interaction.response.send_message("❌ Keine Berechtigung!", ephemeral=True)
         return
     await interaction.response.defer(ephemeral=True)
 
@@ -7707,6 +7707,88 @@ async def panel_apply_slowmode(guild: discord.Guild, v: dict, invoker_id: int):
     return liquid_glass_embed("✅ Slowmode gesetzt", text, discord.Color.from_rgb(130, 200, 240))
 
 
+async def panel_apply_warnings(guild: discord.Guild, v: dict, invoker_id: int):
+    member = guild.get_member(int(v["member"]))
+    if not member:
+        return liquid_glass_embed("❌ Fehler", "User nicht gefunden.", discord.Color.from_rgb(220, 60, 60))
+    user_warnings = warnings_data.get(str(member.id), [])
+    if not user_warnings:
+        return liquid_glass_embed("ℹ️ Keine Verwarnungen", f"**{member}** hat keine Verwarnungen.", discord.Color.from_rgb(140, 210, 255))
+    embed = liquid_glass_embed(
+        f"Verwarnungen – {member}",
+        f"Insgesamt **{len(user_warnings)}** Verwarnung(en).",
+        discord.Color.from_rgb(255, 180, 50)
+    )
+    for i, w in enumerate(user_warnings, 1):
+        embed.add_field(name=f"#{i} – {w['reason']}", value=f"von {w['by']}", inline=False)
+    return embed
+
+
+async def panel_apply_allwarnings(guild: discord.Guild, v: dict, invoker_id: int):
+    active = {uid: w for uid, w in warnings_data.items() if w}
+    if not active:
+        return liquid_glass_embed("ℹ️ Keine Verwarnungen", "Aktuell gibt es keine aktiven Verwarnungen.", discord.Color.from_rgb(140, 210, 255))
+    embed = liquid_glass_embed("Alle Verwarnungen", "", color=discord.Color.from_rgb(255, 160, 60))
+    for uid, warns in sorted(active.items(), key=lambda x: len(x[1]), reverse=True)[:25]:
+        try:
+            u = await bot.fetch_user(int(uid))
+            name = str(u)
+        except Exception:
+            name = uid
+        embed.add_field(name=f"{name} – {len(warns)}x", value=warns[-1]["reason"], inline=False)
+    return embed
+
+
+async def panel_apply_clearwarnings(guild: discord.Guild, v: dict, invoker_id: int):
+    member = guild.get_member(int(v["member"]))
+    if not member:
+        return liquid_glass_embed("❌ Fehler", "User nicht gefunden.", discord.Color.from_rgb(220, 60, 60))
+    user_id = str(member.id)
+    if not warnings_data.get(user_id):
+        return liquid_glass_embed("ℹ️ Keine Verwarnungen", f"**{member}** hat keine Verwarnungen.", discord.Color.from_rgb(140, 210, 255))
+    count = len(warnings_data[user_id])
+    warnings_data[user_id] = []
+    await save_warnings(warnings_data)
+    return liquid_glass_embed(
+        "✅ Verwarnungen gelöscht",
+        f"**{count}** Verwarnung(en) von **{member}** wurden gelöscht.",
+        discord.Color.from_rgb(100, 220, 150)
+    )
+
+
+async def panel_apply_modlog_eintrag(guild: discord.Guild, v: dict, invoker_id: int):
+    aktion = v.get("aktion", "ban")
+    user = guild.get_member(int(v["user"]))
+    grund = v.get("grund") or "Kein Grund angegeben"
+    if not user:
+        return liquid_glass_embed("❌ Fehler", "User nicht gefunden.", discord.Color.from_rgb(220, 60, 60))
+
+    log_cfg = await get_log_config(guild.id)
+    ch_id = log_cfg.get("ban_log")
+    if not ch_id:
+        return liquid_glass_embed("❌ Fehler", "Kein Modlog-Kanal eingerichtet! Richte zuerst das Modlog-System ein.", discord.Color.from_rgb(220, 60, 60))
+    ch = guild.get_channel(int(ch_id))
+    if not ch:
+        return liquid_glass_embed("❌ Fehler", "Modlog-Kanal nicht gefunden!", discord.Color.from_rgb(220, 60, 60))
+
+    farbe = discord.Color.from_rgb(220, 60, 60) if aktion == "ban" else discord.Color.from_rgb(255, 140, 0)
+    titel = "🔨 Ban eingetragen" if aktion == "ban" else "👢 Kick eingetragen"
+
+    embed = discord.Embed(title=titel, color=farbe, timestamp=datetime.now(timezone.utc))
+    embed.set_thumbnail(url=user.display_avatar.url)
+    embed.add_field(name="User", value=f"{user.mention} ({user})", inline=True)
+    embed.add_field(name="Moderator", value=f"<@{invoker_id}>", inline=True)
+    embed.add_field(name="Grund", value=grund, inline=False)
+    embed.set_footer(text=f"User-ID: {user.id}")
+    await ch.send(embed=embed)
+
+    return liquid_glass_embed(
+        "✅ Eintrag erstellt",
+        f"Der {'Ban' if aktion == 'ban' else 'Kick'} von {user.mention} wurde in {ch.mention} eingetragen.",
+        discord.Color.from_rgb(100, 220, 150)
+    )
+
+
 ACTION_SPECS = {
     "uprank": {
         "label": "⬆️ Uprank ausführen",
@@ -7875,6 +7957,35 @@ ACTION_SPECS = {
             {"name": "sekunden", "kind": "int", "label": "Sekunden (0 = deaktivieren)"},
         ],
         "apply": panel_apply_slowmode,
+    },
+    "warnings": {
+        "label": "⚠️ Verwarnungen anzeigen",
+        "fields": [
+            {"name": "member", "kind": "member", "label": "User (ID oder @Erwähnung)"},
+        ],
+        "apply": panel_apply_warnings,
+    },
+    "allwarnings": {
+        "label": "⚠️ Alle Verwarnungen anzeigen",
+        "fields": [],
+        "apply": panel_apply_allwarnings,
+    },
+    "clearwarnings": {
+        "label": "🗑️ Alle Verwarnungen eines Users löschen",
+        "fields": [
+            {"name": "member", "kind": "member", "label": "User (ID oder @Erwähnung)"},
+        ],
+        "apply": panel_apply_clearwarnings,
+    },
+    "modlog_eintrag": {
+        "label": "📝 Modlog: Ban/Kick manuell eintragen",
+        "fields": [
+            {"name": "aktion", "kind": "choice", "label": "Aktion",
+             "choices": [("🔨 Ban", "ban"), ("👢 Kick", "kick")]},
+            {"name": "user", "kind": "member", "label": "Betroffener User (ID oder @Erwähnung)"},
+            {"name": "grund", "kind": "text", "label": "Grund", "optional": True, "default": "Kein Grund angegeben"},
+        ],
+        "apply": panel_apply_modlog_eintrag,
     },
 }
 
